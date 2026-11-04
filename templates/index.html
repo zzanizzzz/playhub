@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- ================= LOGIN / SIGN UP ================= -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="logo">PlayHub</div>
+    <p class="tagline" id="tagline">Log in to start playing</p>
+
+    <form id="auth-form">
+      <input id="username" type="text" placeholder="Username" maxlength="20" class="hidden">
+      <input id="email" type="email" placeholder="Email" required autocomplete="email">
+      <input id="password" type="password" placeholder="Password" required minlength="6" autocomplete="current-password">
+      <button id="auth-btn" type="submit">Log in</button>
+    </form>
+
+    <div class="msg" id="auth-msg"></div>
+    <button class="switch" id="switch-btn" type="button">Don't have an account? Sign up</button>
+  </div>
+</div>
+
+<!-- ================= MAIN APP ================= -->
+<div id="app-screen" class="hidden">
+  <div>
+    <header>
+      <div class="logo">PlayHub</div>
+      <div class="header-right">
+        <span id="welcome"></span>
+        <button id="logout-btn" type="button">Log out</button>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="stats">
+        <div class="stat"><span>Total points</span><strong id="my-points">0</strong></div>
+        <div class="stat"><span>Games played</span><strong id="my-games">0</strong></div>
+        <div class="stat"><span>Best round</span><strong id="my-best">0</strong></div>
+      </div>
+
+      <div class="game-box" id="game-box">
+        <div class="overlay" id="overlay">
+          <h2 id="overlay-title">Tap the Star</h2>
+          <p id="overlay-text">You have 15 seconds. Each hit scores one point.</p>
+          <button id="start-btn" type="button">Start round</button>
+        </div>
+      </div>
+
+      <div class="game-controls">
+        <span>Time: <strong id="time">15</strong>s</span>
+        <span>Score: <strong id="score">0</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <h3>Players progress</h3>
+    <div id="leaderboard"></div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/supabase-client.js') }}"></script>
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+<script src="{{ url_for('static', filename='js/game.js') }}"></script>
+{% endblock %}

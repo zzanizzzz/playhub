@@ -1,4 +1,4 @@
-// The "Tap the Star" game, progress saving, and the leaderboard sidebar.
+// The "Tap the Star" game. Talks to the Flask backend in api/index.py.
 (() => {
   const sb = window.sb;
   const $ = id => document.getElementById(id);
@@ -7,10 +7,31 @@
   const TARGET_SIZE = 64;
 
   let currentUser = null;
+  let roundId = null;
   let score = 0;
   let timeLeft = ROUND_SECONDS;
   let timer = null;
   let roundActive = false;
+
+  /* ---------- Call our backend with the user's login token ---------- */
+  async function api(path, method = 'GET', body = null) {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+
+    const response = await fetch(path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      body: body ? JSON.stringify(body) : null,
+    });
+
+    let result = {};
+    try { result = await response.json(); } catch (_) { /* empty body */ }
+    if (!response.ok) throw new Error(result.error || 'Request failed');
+    return result;
+  }
 
   /* ---------- React to login / logout from auth.js ---------- */
   document.addEventListener('playhub:login', async e => {
@@ -23,40 +44,46 @@
     currentUser = null;
     clearInterval(timer);
     roundActive = false;
+    closeProfile();
   });
 
-  /* ---------- Database: profiles ---------- */
+  /* ---------- Profile popup buttons ---------- */
+  $('my-profile-btn').onclick = () => {
+    if (currentUser) openProfile(currentUser.id);
+  };
+  $('profile-close').onclick = closeProfile;
+  $('profile-modal').onclick = e => {
+    if (e.target.id === 'profile-modal') closeProfile();
+  };
+
+  /* ---------- Loading data ---------- */
   async function refreshAll() {
-    await Promise.all([loadMyProfile(), loadLeaderboard()]);
+    try {
+      await Promise.all([loadMyStats(), loadLeaderboard()]);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
-  async function loadMyProfile() {
-    const { data, error } = await sb.from('profiles')
-      .select('username, points, games_played, best_score')
-      .eq('id', currentUser.id)
-      .single();
-    if (error || !data) return;
-
-    $('welcome').textContent = '@' + data.username;
-    $('my-points').textContent = data.points;
-    $('my-games').textContent = data.games_played;
-    $('my-best').textContent = data.best_score;
+  async function loadMyStats() {
+    const { profile } = await api(`/api/profiles/${currentUser.id}`);
+    $('welcome').textContent = '@' + profile.username;
+    $('my-points').textContent = profile.points;
+    $('my-games').textContent = profile.games_played;
+    $('my-best').textContent = profile.best_score;
   }
 
   async function loadLeaderboard() {
-    const { data, error } = await sb.from('profiles')
-      .select('id, username, points')
-      .order('points', { ascending: false })
-      .limit(50);
-    if (error || !data) return;
+    const { players } = await api('/api/leaderboard');
 
-    const topPoints = Math.max(...data.map(p => p.points), 1);
+    const topPoints = Math.max(...players.map(p => p.points), 1);
     const list = $('leaderboard');
     list.innerHTML = '';
 
-    data.forEach((p, i) => {
+    players.forEach((p, i) => {
       const row = document.createElement('div');
       row.className = 'player' + (p.id === currentUser?.id ? ' me' : '');
+      row.onclick = () => openProfile(p.id);
 
       const rank = document.createElement('div');
       rank.className = 'rank';
@@ -69,7 +96,7 @@
       prow.className = 'prow';
       const name = document.createElement('span');
       name.className = 'pname';
-      name.textContent = '@' + p.username;   // textContent keeps usernames safe
+      name.textContent = '@' + p.username;
       const pts = document.createElement('span');
       pts.className = 'pts';
       pts.textContent = p.points;
@@ -87,22 +114,44 @@
     });
   }
 
-  async function saveRound(points) {
-    const { data: p, error } = await sb.from('profiles')
-      .select('points, games_played, best_score')
-      .eq('id', currentUser.id)
-      .single();
-    if (error || !p) return false;
+  /* ---------- Profile popup ---------- */
+  async function openProfile(userId) {
+    $('profile-modal').classList.remove('hidden');
+    $('profile-name').textContent = 'Loading...';
+    $('profile-history').innerHTML = '';
 
-    const { error: updateError } = await sb.from('profiles').update({
-      points: p.points + points,
-      games_played: p.games_played + 1,
-      best_score: Math.max(p.best_score, points)
-    }).eq('id', currentUser.id);
+    try {
+      const { profile, history } = await api(`/api/profiles/${userId}`);
 
-    if (updateError) return false;
-    await refreshAll();
-    return true;
+      $('profile-name').textContent = '@' + profile.username;
+      $('p-points').textContent = profile.points;
+      $('p-games').textContent = profile.games_played;
+      $('p-best').textContent = profile.best_score;
+
+      const list = $('profile-history');
+      if (history.length === 0) {
+        const empty = document.createElement('li');
+        empty.textContent = 'No rounds played yet.';
+        list.appendChild(empty);
+      }
+
+      history.forEach(r => {
+        const li = document.createElement('li');
+        const when = document.createElement('span');
+        when.textContent = new Date(r.finished_at).toLocaleString();
+        const result = document.createElement('strong');
+        result.textContent = r.score + (r.score === 1 ? ' point' : ' points');
+        li.append(when, result);
+        list.appendChild(li);
+      });
+    } catch (err) {
+      $('profile-name').textContent = 'Could not load profile';
+      console.error(err);
+    }
+  }
+
+  function closeProfile() {
+    $('profile-modal').classList.add('hidden');
   }
 
   /* ---------- Game ---------- */
@@ -110,6 +159,7 @@
     score = 0;
     timeLeft = ROUND_SECONDS;
     roundActive = false;
+    roundId = null;
     $('score').textContent = 0;
     $('time').textContent = ROUND_SECONDS;
     document.querySelectorAll('.target').forEach(t => t.remove());
@@ -121,7 +171,21 @@
     $('overlay').classList.remove('hidden');
   }
 
-  function startRound() {
+  async function startRound() {
+    const startBtn = $('start-btn');
+    startBtn.disabled = true;
+
+    try {
+      // The server records the start time. Ask for it before the timer begins.
+      const round = await api('/api/rounds/start', 'POST');
+      roundId = round.id;
+    } catch (err) {
+      $('overlay-text').textContent = 'Could not start the round: ' + err.message;
+      startBtn.disabled = false;
+      return;
+    }
+
+    startBtn.disabled = false;
     score = 0;
     timeLeft = ROUND_SECONDS;
     roundActive = true;
@@ -172,9 +236,12 @@
     $('start-btn').textContent = 'Play again';
     $('start-btn').onclick = startRound;
 
-    const saved = await saveRound(score);
-    $('overlay-text').textContent = saved
-      ? `Saved! You scored ${score} point${score === 1 ? '' : 's'}.`
-      : 'Could not save your score. Check your connection and try again.';
+    try {
+      await api(`/api/rounds/${roundId}/finish`, 'POST', { score });
+      $('overlay-text').textContent = `Saved! You scored ${score} point${score === 1 ? '' : 's'}.`;
+      await refreshAll();
+    } catch (err) {
+      $('overlay-text').textContent = 'Could not save your score: ' + err.message;
+    }
   }
 })();

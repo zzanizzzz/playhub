@@ -37,9 +37,9 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 ROUND_SECONDS = 15
-MIN_ROUND_SECONDS = 14           # finishes sooner than this are rejected
+MIN_ROUND_SECONDS = 14                  # finishes sooner than this are rejected
 MAX_ROUND_SECONDS = ROUND_SECONDS + 20  # finishes later than this are rejected
-MAX_SCORE = 60                   # more hits than this in one round is treated as cheating
+MAX_SCORE = 60                          # more hits than this in one round is treated as cheating
 
 
 def db(method, table, params=None, json_body=None):
@@ -105,7 +105,9 @@ def database_error(err):
     return jsonify(error="The database request failed. Check your Supabase setup."), 502
 
 
+# Vercel may pass the home page request on as "/api/index", so both paths serve the page.
 @app.route("/")
+@app.route("/api/index")
 def index():
     return render_template(
         "index.html",
